@@ -1,0 +1,73 @@
+name: Auto-Save Daily Backup
+
+on:
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  auto-save:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Check for changes
+      id: check-changes
+      run: |
+        # Check if there are any changes to commit
+        if git diff --quiet HEAD; then
+          echo "no-changes=true" >> $GITHUB_OUTPUT
+          echo "No changes detected"
+        else
+          echo "no-changes=false" >> $GITHUB_OUTPUT
+          echo "Changes detected"
+        fi
+
+    - name: Commit and push changes
+      if: steps.check-changes.outputs.no-changes == 'false'
+      run: |
+        # Add all changes
+        git add .
+        
+        # Create commit with timestamp
+        timestamp=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        git commit -m "Auto-save: Daily backup - $timestamp"
+        
+        # Push to main branch
+        git push origin main
+
+    - name: Create backup tag
+      if: steps.check-changes.outputs.no-changes == 'false'
+      run: |
+        # Create a backup tag with timestamp
+        timestamp=$(date -u +"%Y%m%d-%H%M%S")
+        git tag "backup-$timestamp"
+        git push origin "backup-$timestamp"
+
+    - name: Cleanup old tags (keep last 30)
+      if: steps.check-changes.outputs.no-changes == 'false'
+      run: |
+        # Get list of backup tags, sorted by date
+        tags=$(git tag --sort=-version:refname | grep "^backup-" | tail -n +31)
+        
+        # Delete old tags locally and remotely
+        for tag in $tags; do
+          git tag -d "$tag"
+          git push origin ":refs/tags/$tag"
+        done
+
+    - name: No changes notification
+      if: steps.check-changes.outputs.no-changes == 'true'
+      run: |
+        echo "No changes to commit - repository is up to date"
