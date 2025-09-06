@@ -1015,3 +1015,26 @@ function runComprehensiveTest() {
   Logger.log("📋 Check the logs above for any issues.");
   Logger.log("📧 Check your email for the test email to verify email functionality.");
 }
+
+/**
+ * Log script health to monitoring spreadsheet
+ */
+function logScriptHealth(scriptId) {
+  const MONITOR_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1nQVIR4Rt6lMA8QDVdTzGEMZSJGozreCdgrQ4s5rh01Q/edit';
+  
+  try {
+    const sheet = SpreadsheetApp.openByUrl(MONITOR_SHEET_URL).getSheetByName('Monitor');
+    const dataRange = sheet.getRange(6, 1, sheet.getLastRow() - 5, 1);
+    const scriptIds = dataRange.getValues().flat();
+    const rowIndex = scriptIds.indexOf(scriptId);
+    
+    if (rowIndex !== -1) {
+      const actualRow = rowIndex + 6;
+      sheet.getRange(actualRow, 5).setValue(new Date());
+      sheet.getRange(actualRow, 6).setValue(''); // Clear any alert flag
+    }
+  } catch (e) {
+    // Don't let monitoring errors break your script
+    Logger.log('Could not update monitor: ' + e.toString());
+  }
+}
