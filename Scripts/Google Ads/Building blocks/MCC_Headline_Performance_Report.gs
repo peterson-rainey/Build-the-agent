@@ -19,8 +19,8 @@ const TAB = 'HeadlinePerformance';
 
 // --- END OF CONFIGURATION ---
 
-// Query for Performance Max campaigns (asset_group_asset)
-const PMAX_QUERY = `
+// Query for all campaigns using asset_group_asset (provides conversion data)
+const ASSET_QUERY = `
   SELECT 
     campaign.name,
     campaign.status,
@@ -41,13 +41,12 @@ const PMAX_QUERY = `
     metrics.value_per_conversion
   FROM asset_group_asset 
   WHERE segments.date DURING LAST_30_DAYS
-  AND campaign.advertising_channel_type = 'PERFORMANCE_MAX'
   AND asset_group_asset.field_type IN ('HEADLINE', 'DESCRIPTION')
   ORDER BY metrics.impressions DESC
 `;
 
-// Query for Search campaigns with Responsive Search Ads (ad_group_ad_asset_view)
-const SEARCH_QUERY = `
+// Fallback query for Search campaigns using ad_group_ad_asset_view (limited metrics)
+const SEARCH_FALLBACK_QUERY = `
   SELECT 
     campaign.name,
     campaign.status,
@@ -63,12 +62,8 @@ const SEARCH_QUERY = `
     metrics.cost_micros,
     metrics.impressions,
     metrics.clicks,
-    metrics.conversions,
-    metrics.conversions_value,
     metrics.ctr,
-    metrics.average_cpc,
-    metrics.cost_per_conversion,
-    metrics.value_per_conversion
+    metrics.average_cpc
   FROM ad_group_ad_asset_view 
   WHERE segments.date DURING LAST_30_DAYS
   AND campaign.advertising_channel_type = 'SEARCH'
@@ -205,8 +200,8 @@ function getAssetPerformanceDataForAccount() {
   Logger.log("Getting asset performance data for current account...");
   
   try {
-    // Log sample row structure for debugging (using PMAX_QUERY as sample)
-    const sampleQuery = PMAX_QUERY + ' LIMIT 1';
+    // Log sample row structure for debugging (using ASSET_QUERY as sample)
+    const sampleQuery = ASSET_QUERY + ' LIMIT 1';
     const sampleRows = AdsApp.search(sampleQuery);
     
     if (sampleRows.hasNext()) {
@@ -216,7 +211,7 @@ function getAssetPerformanceDataForAccount() {
         Logger.log("Sample metrics object: " + JSON.stringify(sampleRow.metrics));
       }
     } else {
-      Logger.log("PMAX query returned no rows for sample check.");
+      Logger.log("Asset query returned no rows for sample check.");
     }
 
     // Create asset text lookup table
@@ -224,17 +219,27 @@ function getAssetPerformanceDataForAccount() {
     const assetTextLookup = createAssetTextLookup();
     Logger.log(`✓ Created lookup table with ${Object.keys(assetTextLookup).length} assets`);
 
-    // Process both Performance Max and Search campaign data
-    Logger.log("Processing Performance Max campaigns...");
-    const pmaxRows = AdsApp.search(PMAX_QUERY);
-    const pmaxData = calculateAssetMetrics(pmaxRows, assetTextLookup, 'PERFORMANCE_MAX');
-    
-    Logger.log("Processing Search campaigns...");
-    const searchRows = AdsApp.search(SEARCH_QUERY);
-    const searchData = calculateAssetMetrics(searchRows, assetTextLookup, 'SEARCH');
-    
-    // Combine both datasets
-    const data = [...pmaxData, ...searchData];
+    // Try asset_group_asset first (provides conversion data)
+    Logger.log("Processing asset_group_asset data...");
+    let data = [];
+    try {
+      const assetRows = AdsApp.search(ASSET_QUERY);
+      data = calculateAssetMetrics(assetRows, assetTextLookup, 'ASSET_GROUP');
+      Logger.log(`✓ Found ${data.length} records from asset_group_asset`);
+    } catch (error) {
+      Logger.log(`❌ asset_group_asset query failed: ${error.message}`);
+      Logger.log("Trying fallback query for Search campaigns...");
+      
+      // Fallback to ad_group_ad_asset_view for Search campaigns
+      try {
+        const searchRows = AdsApp.search(SEARCH_FALLBACK_QUERY);
+        data = calculateAssetMetrics(searchRows, assetTextLookup, 'SEARCH_FALLBACK');
+        Logger.log(`✓ Found ${data.length} records from ad_group_ad_asset_view fallback`);
+      } catch (fallbackError) {
+        Logger.log(`❌ Fallback query also failed: ${fallbackError.message}`);
+        data = [];
+      }
+    }
     
     // Sort data by impressions (descending) then by status (Enabled, Paused, Removed)
     const sortedData = sortData(data);
@@ -307,15 +312,15 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
       let assetText = 'N/A';
       
       // Handle different campaign types
-      if (campaignType === 'PERFORMANCE_MAX') {
-        // Performance Max campaigns use asset_group_asset
+      if (campaignType === 'ASSET_GROUP') {
+        // Asset group campaigns use asset_group_asset
         if (row.assetGroupAsset) {
           fieldType = row.assetGroupAsset.fieldType || 'N/A';
           performanceLabel = row.assetGroupAsset.performanceLabel || 'N/A';
           assetResourceName = row.assetGroupAsset.asset || 'N/A';
         }
-      } else if (campaignType === 'SEARCH') {
-        // Search campaigns use ad_group_ad_asset_view
+      } else if (campaignType === 'SEARCH_FALLBACK') {
+        // Search campaigns use ad_group_ad_asset_view (limited metrics)
         if (row.adGroupAdAssetView) {
           fieldType = row.adGroupAdAssetView.fieldType || 'N/A';
           performanceLabel = row.adGroupAdAssetView.performanceLabel || 'N/A';
@@ -347,8 +352,8 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
         combinedStatus = 'REMOVED';
       }
       
-      // For Search campaigns, also check ad group and ad status
-      if (campaignType === 'SEARCH') {
+      // For Search campaigns (fallback), also check ad group and ad status
+      if (campaignType === 'SEARCH_FALLBACK') {
         let adGroupStatus = row.adGroup ? row.adGroup.status : 'UNKNOWN';
         let adStatus = row.adGroupAd ? row.adGroupAd.status : 'UNKNOWN';
         
@@ -359,8 +364,8 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
         }
       }
       
-      // For Performance Max campaigns, also check asset group status
-      if (campaignType === 'PERFORMANCE_MAX') {
+      // For Asset Group campaigns, also check asset group status
+      if (campaignType === 'ASSET_GROUP') {
         let assetGroupStatus = row.assetGroup ? row.assetGroup.status : 'UNKNOWN';
         
         if (assetGroupStatus === 'PAUSED') {
@@ -377,8 +382,20 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
       let cost = costMicros / 1000000; // Convert from micros to currency units
       let impressions = Number(metrics.impressions) || 0;
       let clicks = Number(metrics.clicks) || 0;
-      let conversions = Number(metrics.conversions) || 0;
-      let conversionsValue = Number(metrics.conversionsValue) || 0;
+      
+      // Conversion data may not be available in all query types
+      let conversions = 0;
+      let conversionsValue = 0;
+      if (campaignType === 'ASSET_GROUP') {
+        // asset_group_asset provides conversion data
+        conversions = Number(metrics.conversions) || 0;
+        conversionsValue = Number(metrics.conversionsValue) || 0;
+      } else if (campaignType === 'SEARCH_FALLBACK') {
+        // ad_group_ad_asset_view may not provide conversion data
+        conversions = Number(metrics.conversions) || 0;
+        conversionsValue = Number(metrics.conversionsValue) || 0;
+      }
+      
       let ctr = Number(metrics.ctr) || 0;
       let averageCpc = Number(metrics.averageCpc) || 0;
       let costPerConversion = Number(metrics.costPerConversion) || 0;
