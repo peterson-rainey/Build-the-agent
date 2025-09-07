@@ -19,34 +19,8 @@ const TAB = 'HeadlinePerformance';
 
 // --- END OF CONFIGURATION ---
 
-// Query for all campaigns using asset_group_asset (provides conversion data)
-const ASSET_QUERY = `
-  SELECT 
-    campaign.name,
-    campaign.status,
-    campaign.advertising_channel_type,
-    asset_group.name,
-    asset_group.status,
-    asset_group_asset.asset,
-    asset_group_asset.field_type,
-    asset_group_asset.performance_label,
-    metrics.cost_micros,
-    metrics.impressions,
-    metrics.clicks,
-    metrics.conversions,
-    metrics.conversions_value,
-    metrics.ctr,
-    metrics.average_cpc,
-    metrics.cost_per_conversion,
-    metrics.value_per_conversion
-  FROM asset_group_asset 
-  WHERE segments.date DURING LAST_30_DAYS
-  AND asset_group_asset.field_type IN ('HEADLINE', 'DESCRIPTION')
-  ORDER BY metrics.impressions DESC
-`;
-
-// Fallback query for Search campaigns using ad_group_ad_asset_view (limited metrics)
-const SEARCH_FALLBACK_QUERY = `
+// Query for Search campaigns with Responsive Search Ads (this is what provides the data you showed)
+const SEARCH_QUERY = `
   SELECT 
     campaign.name,
     campaign.status,
@@ -62,8 +36,12 @@ const SEARCH_FALLBACK_QUERY = `
     metrics.cost_micros,
     metrics.impressions,
     metrics.clicks,
+    metrics.conversions,
+    metrics.conversions_value,
     metrics.ctr,
-    metrics.average_cpc
+    metrics.average_cpc,
+    metrics.cost_per_conversion,
+    metrics.value_per_conversion
   FROM ad_group_ad_asset_view 
   WHERE segments.date DURING LAST_30_DAYS
   AND campaign.advertising_channel_type = 'SEARCH'
@@ -200,8 +178,8 @@ function getAssetPerformanceDataForAccount() {
   Logger.log("Getting asset performance data for current account...");
   
   try {
-    // Log sample row structure for debugging (using ASSET_QUERY as sample)
-    const sampleQuery = ASSET_QUERY + ' LIMIT 1';
+    // Log sample row structure for debugging
+    const sampleQuery = SEARCH_QUERY + ' LIMIT 1';
     const sampleRows = AdsApp.search(sampleQuery);
     
     if (sampleRows.hasNext()) {
@@ -211,7 +189,7 @@ function getAssetPerformanceDataForAccount() {
         Logger.log("Sample metrics object: " + JSON.stringify(sampleRow.metrics));
       }
     } else {
-      Logger.log("Asset query returned no rows for sample check.");
+      Logger.log("Search query returned no rows for sample check.");
     }
 
     // Create asset text lookup table
@@ -219,27 +197,11 @@ function getAssetPerformanceDataForAccount() {
     const assetTextLookup = createAssetTextLookup();
     Logger.log(`✓ Created lookup table with ${Object.keys(assetTextLookup).length} assets`);
 
-    // Try asset_group_asset first (provides conversion data)
-    Logger.log("Processing asset_group_asset data...");
-    let data = [];
-    try {
-      const assetRows = AdsApp.search(ASSET_QUERY);
-      data = calculateAssetMetrics(assetRows, assetTextLookup, 'ASSET_GROUP');
-      Logger.log(`✓ Found ${data.length} records from asset_group_asset`);
-    } catch (error) {
-      Logger.log(`❌ asset_group_asset query failed: ${error.message}`);
-      Logger.log("Trying fallback query for Search campaigns...");
-      
-      // Fallback to ad_group_ad_asset_view for Search campaigns
-      try {
-        const searchRows = AdsApp.search(SEARCH_FALLBACK_QUERY);
-        data = calculateAssetMetrics(searchRows, assetTextLookup, 'SEARCH_FALLBACK');
-        Logger.log(`✓ Found ${data.length} records from ad_group_ad_asset_view fallback`);
-      } catch (fallbackError) {
-        Logger.log(`❌ Fallback query also failed: ${fallbackError.message}`);
-        data = [];
-      }
-    }
+    // Process Search campaigns with Responsive Search Ads
+    Logger.log("Processing Search campaigns with Responsive Search Ads...");
+    const searchRows = AdsApp.search(SEARCH_QUERY);
+    const data = calculateAssetMetrics(searchRows, assetTextLookup, 'SEARCH');
+    Logger.log(`✓ Found ${data.length} records from Search campaigns`);
     
     // Sort data by impressions (descending) then by status (Enabled, Paused, Removed)
     const sortedData = sortData(data);
@@ -311,16 +273,9 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
       let performanceLabel = 'N/A';
       let assetText = 'N/A';
       
-      // Handle different campaign types
-      if (campaignType === 'ASSET_GROUP') {
-        // Asset group campaigns use asset_group_asset
-        if (row.assetGroupAsset) {
-          fieldType = row.assetGroupAsset.fieldType || 'N/A';
-          performanceLabel = row.assetGroupAsset.performanceLabel || 'N/A';
-          assetResourceName = row.assetGroupAsset.asset || 'N/A';
-        }
-      } else if (campaignType === 'SEARCH_FALLBACK') {
-        // Search campaigns use ad_group_ad_asset_view (limited metrics)
+      // Handle Search campaigns
+      if (campaignType === 'SEARCH') {
+        // Search campaigns use ad_group_ad_asset_view
         if (row.adGroupAdAssetView) {
           fieldType = row.adGroupAdAssetView.fieldType || 'N/A';
           performanceLabel = row.adGroupAdAssetView.performanceLabel || 'N/A';
@@ -352,25 +307,14 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
         combinedStatus = 'REMOVED';
       }
       
-      // For Search campaigns (fallback), also check ad group and ad status
-      if (campaignType === 'SEARCH_FALLBACK') {
+      // For Search campaigns, also check ad group and ad status
+      if (campaignType === 'SEARCH') {
         let adGroupStatus = row.adGroup ? row.adGroup.status : 'UNKNOWN';
         let adStatus = row.adGroupAd ? row.adGroupAd.status : 'UNKNOWN';
         
         if (adGroupStatus === 'PAUSED' || adStatus === 'PAUSED') {
           combinedStatus = 'PAUSED';
         } else if (adGroupStatus === 'REMOVED' || adStatus === 'REMOVED') {
-          combinedStatus = 'REMOVED';
-        }
-      }
-      
-      // For Asset Group campaigns, also check asset group status
-      if (campaignType === 'ASSET_GROUP') {
-        let assetGroupStatus = row.assetGroup ? row.assetGroup.status : 'UNKNOWN';
-        
-        if (assetGroupStatus === 'PAUSED') {
-          combinedStatus = 'PAUSED';
-        } else if (assetGroupStatus === 'REMOVED') {
           combinedStatus = 'REMOVED';
         }
       }
@@ -383,18 +327,9 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
       let impressions = Number(metrics.impressions) || 0;
       let clicks = Number(metrics.clicks) || 0;
       
-      // Conversion data may not be available in all query types
-      let conversions = 0;
-      let conversionsValue = 0;
-      if (campaignType === 'ASSET_GROUP') {
-        // asset_group_asset provides conversion data
-        conversions = Number(metrics.conversions) || 0;
-        conversionsValue = Number(metrics.conversionsValue) || 0;
-      } else if (campaignType === 'SEARCH_FALLBACK') {
-        // ad_group_ad_asset_view may not provide conversion data
-        conversions = Number(metrics.conversions) || 0;
-        conversionsValue = Number(metrics.conversionsValue) || 0;
-      }
+      // Get conversion data
+      let conversions = Number(metrics.conversions) || 0;
+      let conversionsValue = Number(metrics.conversionsValue) || 0;
       
       let ctr = Number(metrics.ctr) || 0;
       let averageCpc = Number(metrics.averageCpc) || 0;
@@ -406,13 +341,34 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
         continue;
       }
 
-      // Create one row per asset with only the 5 performance metrics
+      // Determine asset status and eligibility
+      let assetStatus = 'Enabled'; // Default to Enabled
+      let status = 'Eligible'; // Default to Eligible
+      let statusReason = ''; // Default to empty
+      
+      // Check if asset is not eligible based on campaign/ad group status
+      if (campaignStatus === 'PAUSED' || (campaignType === 'SEARCH' && (row.adGroup && row.adGroup.status === 'PAUSED'))) {
+        status = 'Not eligible';
+        statusReason = ' --';
+      }
+      
+      // Create one row per asset matching your CSV format
       let newRow = [
-        cost, // Cost in currency units
-        impressions, // Impressions
+        assetStatus, // Asset Status (Enabled/Paused)
+        assetText, // Text (actual headline text)
+        'Ad', // Level (always "Ad" in your data)
+        status, // Status (Eligible/Not eligible)
+        statusReason, // Status Reason (empty or " --")
+        'Advertiser', // Source (always "Advertiser" in your data)
+        ' --', // Last Updated (always " --" in your data)
         clicks, // Clicks
+        impressions, // Impressions
+        ctr, // CTR
+        'USD', // Currency Code (always "USD" in your data)
+        averageCpc, // Avg CPC
+        cost, // Cost
         conversions, // Conversions
-        conversionsValue // Conversion value
+        costPerConversion // Cost / Conv
       ];
       data.push(newRow);
 
@@ -428,17 +384,17 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
 
 function sortData(data) {
   return data.sort((a, b) => {
-    // Primary sort: impressions (descending)
-    const impressionsA = a[1] || 0; // impressions is now at index 1
-    const impressionsB = b[1] || 0;
+    // Primary sort: impressions (descending) - now at index 8
+    const impressionsA = a[8] || 0;
+    const impressionsB = b[8] || 0;
     
     if (impressionsA !== impressionsB) {
       return impressionsB - impressionsA; // Descending order
     }
     
-    // Secondary sort: cost (descending)
-    const costA = a[0] || 0; // cost is at index 0
-    const costB = b[0] || 0;
+    // Secondary sort: cost (descending) - now at index 12
+    const costA = a[12] || 0;
+    const costB = b[12] || 0;
     
     return costB - costA; // Descending order
   });
@@ -462,13 +418,23 @@ function updateAccountSpreadsheet(spreadsheetUrl, assetData, accountName) {
       Logger.log(`✓ Cleared existing data in sheet: ${TAB}`);
     }
     
-    // Create headers
+    // Create headers to match your CSV format
     const headers = [
-      'Cost',
-      'Impressions',
+      'Asset Status',
+      'Text',
+      'Level',
+      'Status',
+      'Status Reason',
+      'Source',
+      'Last Updated',
       'Clicks',
+      'Impressions',
+      'CTR',
+      'Currency Code',
+      'Avg CPC',
+      'Cost',
       'Conversions',
-      'Conversion Value'
+      'Cost / Conv'
     ];
     
     // Prepare all data for bulk write
@@ -515,8 +481,8 @@ function formatSpreadsheet(sheet, totalRows, totalCols) {
     const dataRange = sheet.getRange(1, 1, totalRows, totalCols);
     dataRange.setBorder(true, true, true, true, true, true);
     
-    // Format currency columns (Cost, Conversion Value)
-    const currencyColumns = [0, 4]; // 0-based indices for Cost and Conversion Value
+    // Format currency columns (Avg CPC, Cost, Cost / Conv)
+    const currencyColumns = [11, 12, 14]; // 0-based indices for Avg CPC, Cost, Cost / Conv
     for (const col of currencyColumns) {
       if (col < totalCols) {
         const range = sheet.getRange(2, col + 1, totalRows - 1, 1);
@@ -524,8 +490,17 @@ function formatSpreadsheet(sheet, totalRows, totalCols) {
       }
     }
     
-    // Format number columns (Impressions, Clicks, Conversions)
-    const numberColumns = [1, 2, 3]; // 0-based indices for Impressions, Clicks, Conversions
+    // Format percentage columns (CTR)
+    const percentageColumns = [9]; // 0-based index for CTR
+    for (const col of percentageColumns) {
+      if (col < totalCols) {
+        const range = sheet.getRange(2, col + 1, totalRows - 1, 1);
+        range.setNumberFormat('0.00%');
+      }
+    }
+    
+    // Format number columns (Clicks, Impressions, Conversions)
+    const numberColumns = [7, 8, 13]; // 0-based indices for Clicks, Impressions, Conversions
     for (const col of numberColumns) {
       if (col < totalCols) {
         const range = sheet.getRange(2, col + 1, totalRows - 1, 1);
