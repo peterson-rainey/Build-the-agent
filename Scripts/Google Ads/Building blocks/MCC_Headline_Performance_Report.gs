@@ -32,7 +32,6 @@ const QUERY = `
     ad_group_ad_asset_view.asset,
     ad_group_ad_asset_view.field_type,
     ad_group_ad_asset_view.performance_label,
-    asset.text_asset.text,
     metrics.cost_micros,
     metrics.impressions,
     metrics.clicks,
@@ -43,7 +42,6 @@ const QUERY = `
     metrics.cost_per_conversion,
     metrics.value_per_conversion
   FROM ad_group_ad_asset_view 
-  JOIN asset ON ad_group_ad_asset_view.asset = asset.resource_name
   WHERE segments.date DURING LAST_30_DAYS
   AND ad_group_ad_asset_view.field_type IN ('HEADLINE', 'DESCRIPTION')
   ORDER BY metrics.impressions DESC
@@ -191,9 +189,14 @@ function getAssetPerformanceDataForAccount() {
       Logger.log("Query returned no rows for sample check.");
     }
 
+    // Create asset text lookup table
+    Logger.log("Creating asset text lookup table...");
+    const assetTextLookup = createAssetTextLookup();
+    Logger.log(`✓ Created lookup table with ${Object.keys(assetTextLookup).length} assets`);
+
     // Process the main query results
     const rows = AdsApp.search(QUERY);
-    const data = calculateAssetMetrics(rows);
+    const data = calculateAssetMetrics(rows, assetTextLookup);
     
     // Sort data by impressions (descending) then by status (Enabled, Paused, Removed)
     const sortedData = sortData(data);
@@ -207,7 +210,47 @@ function getAssetPerformanceDataForAccount() {
   }
 }
 
-function calculateAssetMetrics(rows) {
+function createAssetTextLookup() {
+  const assetLookup = {};
+  
+  try {
+    // Query all text assets in the account
+    const assetQuery = `
+      SELECT 
+        asset.resource_name,
+        asset.text_asset.text
+      FROM asset 
+      WHERE asset.type = 'TEXT'
+    `;
+    
+    const assetRows = AdsApp.search(assetQuery);
+    let assetCount = 0;
+    
+    while (assetRows.hasNext()) {
+      try {
+        const assetRow = assetRows.next();
+        const resourceName = assetRow.asset.resourceName;
+        const text = assetRow.asset.textAsset ? assetRow.asset.textAsset.text : 'N/A';
+        
+        if (resourceName && text) {
+          assetLookup[resourceName] = text;
+          assetCount++;
+        }
+      } catch (error) {
+        Logger.log(`Error processing asset row: ${error.message}`);
+      }
+    }
+    
+    Logger.log(`✓ Processed ${assetCount} text assets for lookup table`);
+    return assetLookup;
+    
+  } catch (error) {
+    Logger.log(`❌ Error creating asset text lookup: ${error.message}`);
+    return {};
+  }
+}
+
+function calculateAssetMetrics(rows, assetTextLookup) {
   let data = [];
   let rowCount = 0;
 
@@ -241,9 +284,11 @@ function calculateAssetMetrics(rows) {
         assetResourceName = row.adGroupAdAssetView.asset || 'N/A';
       }
       
-      // Get asset text content
-      if (row.asset && row.asset.textAsset) {
-        assetText = row.asset.textAsset.text || 'N/A';
+      // Get asset text content from lookup table
+      if (assetResourceName && assetResourceName !== 'N/A' && assetTextLookup[assetResourceName]) {
+        assetText = assetTextLookup[assetResourceName];
+      } else {
+        assetText = 'N/A';
       }
       
       // Extract asset ID from resource name (format: customers/{customer_id}/assets/{asset_id})
