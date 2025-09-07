@@ -24,14 +24,11 @@ const QUERY = `
     campaign.name,
     campaign.status,
     campaign.advertising_channel_type,
-    ad_group.name,
-    ad_group.status,
-    ad_group_ad.ad.id,
-    ad_group_ad.ad.name,
-    ad_group_ad.status,
-    ad_group_ad_asset_view.asset,
-    ad_group_ad_asset_view.field_type,
-    ad_group_ad_asset_view.performance_label,
+    asset_group.name,
+    asset_group.status,
+    asset_group_asset.asset,
+    asset_group_asset.field_type,
+    asset_group_asset.performance_label,
     metrics.cost_micros,
     metrics.impressions,
     metrics.clicks,
@@ -41,9 +38,9 @@ const QUERY = `
     metrics.average_cpc,
     metrics.cost_per_conversion,
     metrics.value_per_conversion
-  FROM ad_group_ad_asset_view 
+  FROM asset_group_asset 
   WHERE segments.date DURING LAST_30_DAYS
-  AND ad_group_ad_asset_view.field_type IN ('HEADLINE', 'DESCRIPTION')
+  AND asset_group_asset.field_type IN ('HEADLINE', 'DESCRIPTION')
   ORDER BY metrics.impressions DESC
 `;
 
@@ -263,13 +260,8 @@ function calculateAssetMetrics(rows, assetTextLookup) {
       let campaignName = row.campaign ? row.campaign.name : 'N/A';
       let campaignStatus = row.campaign ? row.campaign.status : 'UNKNOWN';
       let campaignType = row.campaign ? row.campaign.advertisingChannelType : 'UNKNOWN';
-      let adGroupName = row.adGroup ? row.adGroup.name : 'N/A';
-      let adGroupStatus = row.adGroup ? row.adGroup.status : 'UNKNOWN';
-      
-      // Access ad information
-      let adId = row.adGroupAd && row.adGroupAd.ad ? row.adGroupAd.ad.id : 'N/A';
-      let adName = row.adGroupAd && row.adGroupAd.ad ? row.adGroupAd.ad.name : 'N/A';
-      let adStatus = row.adGroupAd ? row.adGroupAd.status : 'UNKNOWN';
+      let assetGroupName = row.assetGroup ? row.assetGroup.name : 'N/A';
+      let assetGroupStatus = row.assetGroup ? row.assetGroup.status : 'UNKNOWN';
 
       // Access individual asset data
       let assetResourceName = 'N/A';
@@ -277,11 +269,11 @@ function calculateAssetMetrics(rows, assetTextLookup) {
       let performanceLabel = 'N/A';
       let assetText = 'N/A';
       
-      // Get data from ad_group_ad_asset_view
-      if (row.adGroupAdAssetView) {
-        fieldType = row.adGroupAdAssetView.fieldType || 'N/A';
-        performanceLabel = row.adGroupAdAssetView.performanceLabel || 'N/A';
-        assetResourceName = row.adGroupAdAssetView.asset || 'N/A';
+      // Get data from asset_group_asset
+      if (row.assetGroupAsset) {
+        fieldType = row.assetGroupAsset.fieldType || 'N/A';
+        performanceLabel = row.assetGroupAsset.performanceLabel || 'N/A';
+        assetResourceName = row.assetGroupAsset.asset || 'N/A';
       }
       
       // Get asset text content from lookup table
@@ -302,9 +294,9 @@ function calculateAssetMetrics(rows, assetTextLookup) {
 
       // Determine combined status - if any component is paused, show as paused
       let combinedStatus = 'ENABLED';
-      if (campaignStatus === 'PAUSED' || adGroupStatus === 'PAUSED' || adStatus === 'PAUSED') {
+      if (campaignStatus === 'PAUSED' || assetGroupStatus === 'PAUSED') {
         combinedStatus = 'PAUSED';
-      } else if (campaignStatus === 'REMOVED' || adGroupStatus === 'REMOVED' || adStatus === 'REMOVED') {
+      } else if (campaignStatus === 'REMOVED' || assetGroupStatus === 'REMOVED') {
         combinedStatus = 'REMOVED';
       }
 
