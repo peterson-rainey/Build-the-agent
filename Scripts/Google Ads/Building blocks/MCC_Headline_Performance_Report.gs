@@ -19,30 +19,20 @@ const TAB = 'HeadlinePerformance';
 
 // --- END OF CONFIGURATION ---
 
-// Query for Search campaigns with Responsive Search Ads (headlines only)
-const SEARCH_QUERY = `
+// Query for headlines and descriptions using campaign_asset (provides conversion data)
+const QUERY = `
   SELECT 
-    campaign.name,
-    campaign.status,
-    campaign.advertising_channel_type,
-    ad_group.name,
-    ad_group.status,
-    ad_group_ad.ad.id,
-    ad_group_ad.ad.name,
-    ad_group_ad.status,
-    ad_group_ad_asset_view.asset,
-    ad_group_ad_asset_view.field_type,
-    ad_group_ad_asset_view.performance_label,
-    metrics.cost_micros,
+    campaign_asset.asset,
+    campaign_asset.field_type,
+    asset.text_asset.text,
     metrics.impressions,
     metrics.clicks,
-    metrics.ctr,
-    metrics.average_cpc
-  FROM ad_group_ad_asset_view 
+    metrics.cost_micros,
+    metrics.conversions,
+    metrics.conversions_value
+  FROM campaign_asset 
   WHERE segments.date DURING LAST_30_DAYS
-  AND campaign.advertising_channel_type = 'SEARCH'
-  AND ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD'
-  AND ad_group_ad_asset_view.field_type IN ('HEADLINE', 'DESCRIPTION')
+  AND campaign_asset.field_type IN ('HEADLINE', 'DESCRIPTION')
   ORDER BY metrics.impressions DESC
 `;
 
@@ -175,7 +165,7 @@ function getAssetPerformanceDataForAccount() {
   
   try {
     // Log sample row structure for debugging
-    const sampleQuery = SEARCH_QUERY + ' LIMIT 1';
+    const sampleQuery = QUERY + ' LIMIT 1';
     const sampleRows = AdsApp.search(sampleQuery);
     
     if (sampleRows.hasNext()) {
@@ -185,19 +175,14 @@ function getAssetPerformanceDataForAccount() {
         Logger.log("Sample metrics object: " + JSON.stringify(sampleRow.metrics));
       }
     } else {
-      Logger.log("Search query returned no rows for sample check.");
+      Logger.log("Query returned no rows for sample check.");
     }
 
-    // Create asset text lookup table
-    Logger.log("Creating asset text lookup table...");
-    const assetTextLookup = createAssetTextLookup();
-    Logger.log(`✓ Created lookup table with ${Object.keys(assetTextLookup).length} assets`);
-
-    // Process Search campaigns with Responsive Search Ads (headlines only)
-    Logger.log("Processing Search campaigns with Responsive Search Ads...");
-    const searchRows = AdsApp.search(SEARCH_QUERY);
-    const data = calculateAssetMetrics(searchRows, assetTextLookup, 'SEARCH');
-    Logger.log(`✓ Found ${data.length} records from Search campaigns`);
+    // Process the main query results
+    Logger.log("Processing headlines and descriptions from campaign_asset...");
+    const rows = AdsApp.search(QUERY);
+    const data = calculateAssetMetrics(rows);
+    Logger.log(`✓ Found ${data.length} records from campaign_asset`);
     
     // Sort data by impressions (descending) then by status (Enabled, Paused, Removed)
     const sortedData = sortData(data);
@@ -211,49 +196,11 @@ function getAssetPerformanceDataForAccount() {
   }
 }
 
-function createAssetTextLookup() {
-  const assetLookup = {};
-  
-  try {
-    // Query all text assets in the account
-    const assetQuery = `
-      SELECT 
-        asset.resource_name,
-        asset.text_asset.text
-      FROM asset 
-      WHERE asset.type = 'TEXT'
-    `;
-    
-    const assetRows = AdsApp.search(assetQuery);
-    let assetCount = 0;
-    
-    while (assetRows.hasNext()) {
-      try {
-        const assetRow = assetRows.next();
-        const resourceName = assetRow.asset.resourceName;
-        const text = assetRow.asset.textAsset ? assetRow.asset.textAsset.text : 'N/A';
-        
-        if (resourceName && text) {
-          assetLookup[resourceName] = text;
-          assetCount++;
-        }
-      } catch (error) {
-        Logger.log(`Error processing asset row: ${error.message}`);
-      }
-    }
-    
-    Logger.log(`✓ Processed ${assetCount} text assets for lookup table`);
-    return assetLookup;
-    
-  } catch (error) {
-    Logger.log(`❌ Error creating asset text lookup: ${error.message}`);
-    return {};
-  }
-}
 
-function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
+function calculateAssetMetrics(rows) {
   let data = [];
   let rowCount = 0;
+  let assetTypeCounts = {};
 
   while (rows.hasNext()) {
     try {
@@ -261,112 +208,72 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
       rowCount++;
 
       // Access dimensions using correct nested object structure
-      let campaignName = row.campaign ? row.campaign.name : 'N/A';
-      let campaignStatus = row.campaign ? row.campaign.status : 'UNKNOWN';
-      let campaignChannelType = row.campaign ? row.campaign.advertisingChannelType : 'UNKNOWN';
-      let assetResourceName = 'N/A';
-      let fieldType = 'N/A';
-      let performanceLabel = 'N/A';
+      let assetResourceName = row.campaignAsset && row.campaignAsset.asset ? row.campaignAsset.asset : 'N/A';
+      let fieldType = row.campaignAsset && row.campaignAsset.fieldType ? row.campaignAsset.fieldType : 'UNKNOWN';
+      
+      // Extract actual asset text content
       let assetText = 'N/A';
-      
-      // Handle Search campaigns
-      if (campaignType === 'SEARCH') {
-        // Search campaigns use ad_group_ad_asset_view
-        if (row.adGroupAdAssetView) {
-          fieldType = row.adGroupAdAssetView.fieldType || 'N/A';
-          performanceLabel = row.adGroupAdAssetView.performanceLabel || 'N/A';
-          assetResourceName = row.adGroupAdAssetView.asset || 'N/A';
-        }
+      if (row.asset && row.asset.textAsset) {
+        assetText = row.asset.textAsset.text || 'N/A';
       }
       
-      // Get asset text content from lookup table
-      if (assetResourceName && assetResourceName !== 'N/A' && assetTextLookup[assetResourceName]) {
-        assetText = assetTextLookup[assetResourceName];
-      } else {
-        assetText = 'N/A';
-      }
-      
-      // Extract asset ID from resource name (format: customers/{customer_id}/assets/{asset_id})
-      let assetId = 'N/A';
-      if (assetResourceName && assetResourceName !== 'N/A') {
-        const parts = assetResourceName.split('/');
-        if (parts.length > 0) {
-          assetId = parts[parts.length - 1];
-        }
+      // Clean up asset text
+      if (assetText === 'N/A' || !assetText.trim()) {
+        assetText = assetResourceName.split('/').pop(); // Fallback to asset ID
       }
 
-      // Determine combined status - if any component is paused, show as paused
-      let combinedStatus = 'ENABLED';
-      if (campaignStatus === 'PAUSED') {
-        combinedStatus = 'PAUSED';
-      } else if (campaignStatus === 'REMOVED') {
-        combinedStatus = 'REMOVED';
-      }
-      
-      // For Search campaigns, also check ad group and ad status
-      if (campaignType === 'SEARCH') {
-        let adGroupStatus = row.adGroup ? row.adGroup.status : 'UNKNOWN';
-        let adStatus = row.adGroupAd ? row.adGroupAd.status : 'UNKNOWN';
-        
-        if (adGroupStatus === 'PAUSED' || adStatus === 'PAUSED') {
-          combinedStatus = 'PAUSED';
-        } else if (adGroupStatus === 'REMOVED' || adStatus === 'REMOVED') {
-          combinedStatus = 'REMOVED';
-        }
-      }
-
-      // Access metrics nested within the 'metrics' object - these are asset-specific
+      // Access metrics nested within the 'metrics' object
       const metrics = row.metrics || {};
 
-      let costMicros = Number(metrics.costMicros) || 0;
-      let cost = costMicros / 1000000; // Convert from micros to currency units
       let impressions = Number(metrics.impressions) || 0;
       let clicks = Number(metrics.clicks) || 0;
-      
-      // Conversion data is not available in ad_group_ad_asset_view according to API docs
-      let conversions = 0; // Not available in this resource
-      let conversionsValue = 0; // Not available in this resource
-      
-      let ctr = Number(metrics.ctr) || 0;
-      let averageCpc = Number(metrics.averageCpc) || 0;
-      let costPerConversion = 0; // Not available in this resource
-      let valuePerConversion = 0; // Not available in this resource
+      let costMicros = Number(metrics.costMicros) || 0;
+      let conversions = Number(metrics.conversions) || 0;
+      let conversionValue = Number(metrics.conversionsValue) || 0;
 
-      // Skip assets with zero impressions (optional - remove this if you want all assets)
-      if (impressions === 0) {
-        continue;
-      }
+      // Convert cost from micros to actual currency
+      let cost = costMicros / 1000000;
 
-      // Determine asset status and eligibility
-      let assetStatus = 'Enabled'; // Default to Enabled
-      let status = 'Eligible'; // Default to Eligible
-      let statusReason = ''; // Default to empty
-      
-      // Check if asset is not eligible based on campaign/ad group status
-      if (campaignStatus === 'PAUSED' || (campaignType === 'SEARCH' && (row.adGroup && row.adGroup.status === 'PAUSED'))) {
-        status = 'Not eligible';
-        statusReason = ' --';
+      // Calculate additional metrics
+      let ctr = impressions > 0 ? (clicks / impressions) : 0;
+      let averageCpc = clicks > 0 ? (cost / clicks) : 0;
+      let costPerConversion = conversions > 0 ? (cost / conversions) : 0;
+
+      // Only include assets with impressions > 0
+      if (impressions > 0) {
+        // Count asset types for logging
+        if (assetTypeCounts[fieldType]) {
+          assetTypeCounts[fieldType]++;
+        } else {
+          assetTypeCounts[fieldType] = 1;
+        }
+
+        // Determine asset status and eligibility
+        let assetStatus = 'Enabled'; // Default to Enabled
+        let status = 'Eligible'; // Default to Eligible
+        let statusReason = ''; // Default to empty
+        
+        // Create one row per asset matching your CSV format
+        let newRow = [
+          assetStatus, // Asset Status (Enabled/Paused)
+          assetText, // Text (actual headline text)
+          'Ad', // Level (always "Ad" in your data)
+          status, // Status (Eligible/Not eligible)
+          statusReason, // Status Reason (empty or " --")
+          'Advertiser', // Source (always "Advertiser" in your data)
+          ' --', // Last Updated (always " --" in your data)
+          clicks, // Clicks
+          impressions, // Impressions
+          ctr, // CTR
+          'USD', // Currency Code (always "USD" in your data)
+          averageCpc, // Avg CPC
+          cost, // Cost
+          conversions, // Conversions
+          costPerConversion // Cost / Conv
+        ];
+
+        data.push(newRow);
       }
-      
-      // Create one row per asset matching your CSV format
-      let newRow = [
-        assetStatus, // Asset Status (Enabled/Paused)
-        assetText, // Text (actual headline text)
-        'Ad', // Level (always "Ad" in your data)
-        status, // Status (Eligible/Not eligible)
-        statusReason, // Status Reason (empty or " --")
-        'Advertiser', // Source (always "Advertiser" in your data)
-        ' --', // Last Updated (always " --" in your data)
-        clicks, // Clicks
-        impressions, // Impressions
-        ctr, // CTR
-        'USD', // Currency Code (always "USD" in your data)
-        averageCpc, // Avg CPC
-        cost, // Cost
-        conversions, // Conversions
-        costPerConversion // Cost / Conv
-      ];
-      data.push(newRow);
 
     } catch (e) {
       Logger.log("Error processing row: " + e + " | Row data: " + JSON.stringify(row));
@@ -374,7 +281,8 @@ function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
     }
   }
 
-  Logger.log(`Processed ${rowCount} total rows, ${data.length} successful asset rows`);
+  Logger.log(`✓ Found ${data.length} assets with impressions > 0`);
+  Logger.log(`Asset breakdown: ${JSON.stringify(assetTypeCounts)}`);
   return data;
 }
 
