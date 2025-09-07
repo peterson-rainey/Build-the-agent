@@ -15,7 +15,7 @@ const MASTER_SHEET_NAME = "AccountMappings"; // Default tab name
 const SINGLE_CID_FOR_TESTING = "242-931-3541"; // Example: "123-456-7890" or ""
 
 // 4. REPORT CONFIGURATION
-const TAB = 'AssetPerformance';
+const TAB = 'HeadlinePerformance';
 
 // --- END OF CONFIGURATION ---
 
