@@ -205,8 +205,8 @@ function getAssetPerformanceDataForAccount() {
   Logger.log("Getting asset performance data for current account...");
   
   try {
-    // Log sample row structure for debugging
-    const sampleQuery = QUERY + ' LIMIT 1';
+    // Log sample row structure for debugging (using PMAX_QUERY as sample)
+    const sampleQuery = PMAX_QUERY + ' LIMIT 1';
     const sampleRows = AdsApp.search(sampleQuery);
     
     if (sampleRows.hasNext()) {
@@ -216,7 +216,7 @@ function getAssetPerformanceDataForAccount() {
         Logger.log("Sample metrics object: " + JSON.stringify(sampleRow.metrics));
       }
     } else {
-      Logger.log("Query returned no rows for sample check.");
+      Logger.log("PMAX query returned no rows for sample check.");
     }
 
     // Create asset text lookup table
