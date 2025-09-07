@@ -19,7 +19,8 @@ const TAB = 'HeadlinePerformance';
 
 // --- END OF CONFIGURATION ---
 
-const QUERY = `
+// Query for Performance Max campaigns (asset_group_asset)
+const PMAX_QUERY = `
   SELECT 
     campaign.name,
     campaign.status,
@@ -40,7 +41,39 @@ const QUERY = `
     metrics.value_per_conversion
   FROM asset_group_asset 
   WHERE segments.date DURING LAST_30_DAYS
+  AND campaign.advertising_channel_type = 'PERFORMANCE_MAX'
   AND asset_group_asset.field_type IN ('HEADLINE', 'DESCRIPTION')
+  ORDER BY metrics.impressions DESC
+`;
+
+// Query for Search campaigns with Responsive Search Ads (ad_group_ad_asset_view)
+const SEARCH_QUERY = `
+  SELECT 
+    campaign.name,
+    campaign.status,
+    campaign.advertising_channel_type,
+    ad_group.name,
+    ad_group.status,
+    ad_group_ad.ad.id,
+    ad_group_ad.ad.name,
+    ad_group_ad.status,
+    ad_group_ad_asset_view.asset,
+    ad_group_ad_asset_view.field_type,
+    ad_group_ad_asset_view.performance_label,
+    metrics.cost_micros,
+    metrics.impressions,
+    metrics.clicks,
+    metrics.conversions,
+    metrics.conversions_value,
+    metrics.ctr,
+    metrics.average_cpc,
+    metrics.cost_per_conversion,
+    metrics.value_per_conversion
+  FROM ad_group_ad_asset_view 
+  WHERE segments.date DURING LAST_30_DAYS
+  AND campaign.advertising_channel_type = 'SEARCH'
+  AND ad_group_ad.ad.type = 'RESPONSIVE_SEARCH_AD'
+  AND ad_group_ad_asset_view.field_type IN ('HEADLINE', 'DESCRIPTION')
   ORDER BY metrics.impressions DESC
 `;
 
@@ -191,9 +224,17 @@ function getAssetPerformanceDataForAccount() {
     const assetTextLookup = createAssetTextLookup();
     Logger.log(`✓ Created lookup table with ${Object.keys(assetTextLookup).length} assets`);
 
-    // Process the main query results
-    const rows = AdsApp.search(QUERY);
-    const data = calculateAssetMetrics(rows, assetTextLookup);
+    // Process both Performance Max and Search campaign data
+    Logger.log("Processing Performance Max campaigns...");
+    const pmaxRows = AdsApp.search(PMAX_QUERY);
+    const pmaxData = calculateAssetMetrics(pmaxRows, assetTextLookup, 'PERFORMANCE_MAX');
+    
+    Logger.log("Processing Search campaigns...");
+    const searchRows = AdsApp.search(SEARCH_QUERY);
+    const searchData = calculateAssetMetrics(searchRows, assetTextLookup, 'SEARCH');
+    
+    // Combine both datasets
+    const data = [...pmaxData, ...searchData];
     
     // Sort data by impressions (descending) then by status (Enabled, Paused, Removed)
     const sortedData = sortData(data);
@@ -247,7 +288,7 @@ function createAssetTextLookup() {
   }
 }
 
-function calculateAssetMetrics(rows, assetTextLookup) {
+function calculateAssetMetrics(rows, assetTextLookup, campaignType) {
   let data = [];
   let rowCount = 0;
 
@@ -259,21 +300,27 @@ function calculateAssetMetrics(rows, assetTextLookup) {
       // Access dimensions using correct nested object structure
       let campaignName = row.campaign ? row.campaign.name : 'N/A';
       let campaignStatus = row.campaign ? row.campaign.status : 'UNKNOWN';
-      let campaignType = row.campaign ? row.campaign.advertisingChannelType : 'UNKNOWN';
-      let assetGroupName = row.assetGroup ? row.assetGroup.name : 'N/A';
-      let assetGroupStatus = row.assetGroup ? row.assetGroup.status : 'UNKNOWN';
-
-      // Access individual asset data
+      let campaignChannelType = row.campaign ? row.campaign.advertisingChannelType : 'UNKNOWN';
       let assetResourceName = 'N/A';
       let fieldType = 'N/A';
       let performanceLabel = 'N/A';
       let assetText = 'N/A';
       
-      // Get data from asset_group_asset
-      if (row.assetGroupAsset) {
-        fieldType = row.assetGroupAsset.fieldType || 'N/A';
-        performanceLabel = row.assetGroupAsset.performanceLabel || 'N/A';
-        assetResourceName = row.assetGroupAsset.asset || 'N/A';
+      // Handle different campaign types
+      if (campaignType === 'PERFORMANCE_MAX') {
+        // Performance Max campaigns use asset_group_asset
+        if (row.assetGroupAsset) {
+          fieldType = row.assetGroupAsset.fieldType || 'N/A';
+          performanceLabel = row.assetGroupAsset.performanceLabel || 'N/A';
+          assetResourceName = row.assetGroupAsset.asset || 'N/A';
+        }
+      } else if (campaignType === 'SEARCH') {
+        // Search campaigns use ad_group_ad_asset_view
+        if (row.adGroupAdAssetView) {
+          fieldType = row.adGroupAdAssetView.fieldType || 'N/A';
+          performanceLabel = row.adGroupAdAssetView.performanceLabel || 'N/A';
+          assetResourceName = row.adGroupAdAssetView.asset || 'N/A';
+        }
       }
       
       // Get asset text content from lookup table
@@ -294,10 +341,33 @@ function calculateAssetMetrics(rows, assetTextLookup) {
 
       // Determine combined status - if any component is paused, show as paused
       let combinedStatus = 'ENABLED';
-      if (campaignStatus === 'PAUSED' || assetGroupStatus === 'PAUSED') {
+      if (campaignStatus === 'PAUSED') {
         combinedStatus = 'PAUSED';
-      } else if (campaignStatus === 'REMOVED' || assetGroupStatus === 'REMOVED') {
+      } else if (campaignStatus === 'REMOVED') {
         combinedStatus = 'REMOVED';
+      }
+      
+      // For Search campaigns, also check ad group and ad status
+      if (campaignType === 'SEARCH') {
+        let adGroupStatus = row.adGroup ? row.adGroup.status : 'UNKNOWN';
+        let adStatus = row.adGroupAd ? row.adGroupAd.status : 'UNKNOWN';
+        
+        if (adGroupStatus === 'PAUSED' || adStatus === 'PAUSED') {
+          combinedStatus = 'PAUSED';
+        } else if (adGroupStatus === 'REMOVED' || adStatus === 'REMOVED') {
+          combinedStatus = 'REMOVED';
+        }
+      }
+      
+      // For Performance Max campaigns, also check asset group status
+      if (campaignType === 'PERFORMANCE_MAX') {
+        let assetGroupStatus = row.assetGroup ? row.assetGroup.status : 'UNKNOWN';
+        
+        if (assetGroupStatus === 'PAUSED') {
+          combinedStatus = 'PAUSED';
+        } else if (assetGroupStatus === 'REMOVED') {
+          combinedStatus = 'REMOVED';
+        }
       }
 
       // Access metrics nested within the 'metrics' object - these are asset-specific
