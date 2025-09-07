@@ -327,28 +327,13 @@ function calculateAssetMetrics(rows, assetTextLookup) {
         continue;
       }
 
-      // Create one row per asset with its individual performance metrics
+      // Create one row per asset with only the 5 performance metrics
       let newRow = [
-        campaignName,
-        campaignType,
-        adGroupName,
-        adId,
-        adName,
-        combinedStatus,
-        fieldType, // Asset Type (HEADLINE or DESCRIPTION) - moved up for prominence
-        assetText, // Actual asset text content - moved up for prominence
-        assetId, // Asset ID
-        assetResourceName, // Asset resource name
-        performanceLabel, // Performance label (BEST, GOOD, LOW, PENDING)
         cost, // Cost in currency units
         impressions, // Impressions
         clicks, // Clicks
         conversions, // Conversions
-        conversionsValue, // Conversion value
-        ctr, // Click-through rate
-        averageCpc, // Average CPC
-        costPerConversion, // Cost per conversion
-        valuePerConversion // Value per conversion
+        conversionsValue // Conversion value
       ];
       data.push(newRow);
 
@@ -365,22 +350,18 @@ function calculateAssetMetrics(rows, assetTextLookup) {
 function sortData(data) {
   return data.sort((a, b) => {
     // Primary sort: impressions (descending)
-    const impressionsA = a[13] || 0; // impressions is now at index 13
-    const impressionsB = b[13] || 0;
+    const impressionsA = a[1] || 0; // impressions is now at index 1
+    const impressionsB = b[1] || 0;
     
     if (impressionsA !== impressionsB) {
       return impressionsB - impressionsA; // Descending order
     }
     
-    // Secondary sort: status (Enabled, Paused, Removed)
-    const statusA = a[5] || ''; // status is still at index 5
-    const statusB = b[5] || '';
+    // Secondary sort: cost (descending)
+    const costA = a[0] || 0; // cost is at index 0
+    const costB = b[0] || 0;
     
-    const statusOrder = { 'ENABLED': 1, 'PAUSED': 2, 'REMOVED': 3 };
-    const orderA = statusOrder[statusA] || 4;
-    const orderB = statusOrder[statusB] || 4;
-    
-    return orderA - orderB; // Ascending order (Enabled first)
+    return costB - costA; // Descending order
   });
 }
 
@@ -404,26 +385,11 @@ function updateAccountSpreadsheet(spreadsheetUrl, assetData, accountName) {
     
     // Create headers
     const headers = [
-      'Campaign Name',
-      'Campaign Type',
-      'Ad Group Name',
-      'Ad ID',
-      'Ad Name',
-      'Status',
-      'Asset Type',
-      'Asset Text',
-      'Asset ID',
-      'Asset Resource Name',
-      'Performance Label',
       'Cost',
       'Impressions',
       'Clicks',
       'Conversions',
-      'Conversion Value',
-      'CTR',
-      'Avg CPC',
-      'Cost/Conv',
-      'Value/Conv'
+      'Conversion Value'
     ];
     
     // Prepare all data for bulk write
@@ -470,8 +436,8 @@ function formatSpreadsheet(sheet, totalRows, totalCols) {
     const dataRange = sheet.getRange(1, 1, totalRows, totalCols);
     dataRange.setBorder(true, true, true, true, true, true);
     
-    // Format currency columns (Cost, Avg CPC, Cost/Conv, Value/Conv)
-    const currencyColumns = [11, 17, 18, 19]; // 0-based indices (moved due to new columns)
+    // Format currency columns (Cost, Conversion Value)
+    const currencyColumns = [0, 4]; // 0-based indices for Cost and Conversion Value
     for (const col of currencyColumns) {
       if (col < totalCols) {
         const range = sheet.getRange(2, col + 1, totalRows - 1, 1);
@@ -479,17 +445,8 @@ function formatSpreadsheet(sheet, totalRows, totalCols) {
       }
     }
     
-    // Format percentage columns (CTR)
-    const percentageColumns = [16]; // 0-based index for CTR (moved due to new columns)
-    for (const col of percentageColumns) {
-      if (col < totalCols) {
-        const range = sheet.getRange(2, col + 1, totalRows - 1, 1);
-        range.setNumberFormat('0.00%');
-      }
-    }
-    
     // Format number columns (Impressions, Clicks, Conversions)
-    const numberColumns = [12, 13, 14]; // 0-based indices (moved due to new columns)
+    const numberColumns = [1, 2, 3]; // 0-based indices for Impressions, Clicks, Conversions
     for (const col of numberColumns) {
       if (col < totalCols) {
         const range = sheet.getRange(2, col + 1, totalRows - 1, 1);
