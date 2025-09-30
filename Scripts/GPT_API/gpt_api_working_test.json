@@ -1,0 +1,70 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+      "title": "Google Sheets Data Fetcher",
+      "version": "1.0.0",
+      "description": "Fetches the value of a specific cell from a Google Sheet using a Google Apps Script macro."
+    },
+    "servers": [
+      {
+        "url": "insert_your_google_sheets_macro"
+      }
+    ],
+    "paths": {
+      "/exec": {
+        "get": {
+          "summary": "Fetch the value of a specific cell from a Google Sheet",
+          "operationId": "getCellValue",
+          "parameters": [
+            {
+              "name": "sheet_name",
+              "in": "query",
+              "required": true,
+              "description": "The name of the sheet to fetch the data from.",
+              "schema": {
+                "type": "string"
+              }
+            },
+            {
+              "name": "cell",
+              "in": "query",
+              "required": true,
+              "description": "The address of the cell to fetch the data from (e.g., B13).",
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "A JSON object containing the value of the requested cell.",
+              "content": {
+                "application/json": {
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "status": {
+                        "type": "string",
+                        "description": "The status of the request ('success' or 'error')."
+                      },
+                      "value": {
+                        "type": "string",
+                        "description": "The value of the requested cell (if the status is 'success')."
+                      },
+                      "message": {
+                        "type": "string",
+                        "description": "An error message (if the status is 'error')."
+                      }
+                    },
+                    "required": [
+                      "status"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }

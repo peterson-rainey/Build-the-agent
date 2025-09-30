@@ -1,0 +1,87 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Lead Response Processing API",
+    "version": "1.0.0",
+    "description": "API for retrieving lead response data from Google Sheets (GET only)"
+  },
+  "servers": [
+    {
+      "url": "https://script.google.com/macros/s/AKfycbzKcDg-1-o3-JLaOpfRFbv8YB3-P4pdYKoOuTvfDXVqqe25H5PXmd6h4fWFVbnhuzto",
+      "description": "Creekside Marketing Lead Response API"
+    }
+  ],
+  "paths": {
+    "/exec": {
+      "get": {
+        "summary": "Get lead response data",
+        "operationId": "getLeadResponseData",
+        "parameters": [
+          {
+            "name": "action",
+            "in": "query",
+            "required": true,
+            "description": "The action to perform",
+            "schema": {
+              "type": "string",
+              "enum": ["get_response_examples", "get_company_rules", "get_lead_history"]
+            }
+          },
+          {
+            "name": "data",
+            "in": "query",
+            "required": false,
+            "description": "Data for the specific action (JSON string)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "data": {
+                      "type": "object"
+                    },
+                    "timestamp": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "error": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
