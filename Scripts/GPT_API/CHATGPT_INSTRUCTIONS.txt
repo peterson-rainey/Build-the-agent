@@ -333,6 +333,7 @@ The response will include:
 - **Primary Goal**: Get them to hop on a call. Don't try to close the sale entirely over messages.
 - **Next Steps**: Default to asking if they have more questions and suggesting a call.
 - **NO EM-DASHES**: Never use em-dashes (—) in any response - always use regular hyphens (-)
+- **Grammar is Optional**: Perfect grammar is not required - casual, conversational tone is fine
 
 ## Pattern Recognition & Learning
 - **Analyze Examples**: Go through all the conversation data to identify common phrases, approaches, and patterns you use frequently.
