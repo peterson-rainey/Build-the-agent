@@ -118,7 +118,23 @@ function doPost(e) {
 function handleGetCompanyRules(data) {
   try {
     const sheet = getCompanyRulesSheet();
+    if (!sheet) {
+      console.error('Company rules sheet not found');
+      return createErrorResponse('Company rules sheet not found');
+    }
+    
     const allData = sheet.getDataRange().getValues();
+    
+    // Check if sheet is empty (only header row or no data)
+    if (allData.length <= 1) {
+      console.log('Company rules sheet is empty or has no data');
+      return createSuccessResponse({
+        rules: [],
+        total_rules: 0,
+        search_criteria: data,
+        message: 'No company rules found'
+      });
+    }
     
     // Skip header row
     const rules = allData.slice(1).map((row, index) => ({
@@ -501,6 +517,34 @@ function testDoGetSimple() {
   const result = doGet(mockEvent);
   console.log('doGet result:', result.getContent());
   return result;
+}
+
+/**
+ * Test function specifically for company rules debugging
+ */
+function testCompanyRules() {
+  console.log('Testing company rules function...');
+  
+  try {
+    // Test sheet access
+    const sheet = getCompanyRulesSheet();
+    console.log('Sheet found:', sheet ? 'Yes' : 'No');
+    
+    if (sheet) {
+      const allData = sheet.getDataRange().getValues();
+      console.log('Data rows:', allData.length);
+      console.log('First few rows:', allData.slice(0, 3));
+    }
+    
+    // Test the full function
+    const result = handleGetCompanyRules({});
+    console.log('Company rules result:', result);
+    
+    return result;
+  } catch (error) {
+    console.error('Error in testCompanyRules:', error);
+    return { error: error.message };
+  }
 }
 
 /**
