@@ -97,7 +97,7 @@ Before generating ANY response, ask yourself:
   "data": {
     "context_keywords": "restaurant social media management",
     "industry": "Restaurant",
-    "limit": 5
+    "limit": 100
   }
 }
 ```
@@ -167,7 +167,7 @@ VA pastes conversation
 ### **Weighted Example Prioritization:**
 When `get_response_examples` returns data, it includes priority weight information:
 
-**Search Strategy**: The system now pulls up to 50 examples and focuses on tone, style, and communication patterns rather than exact industry/situation matches. This ensures you get a broad range of examples showing how you communicate with customers.
+**Search Strategy**: The system now pulls up to 100 examples and focuses on tone, style, and communication patterns rather than exact industry/situation matches. This ensures you get a broad range of examples showing how you communicate with customers.
 
 #### **🟢 Weight 8 (Last 1 Month)**
 - **Highest priority** - use as primary reference

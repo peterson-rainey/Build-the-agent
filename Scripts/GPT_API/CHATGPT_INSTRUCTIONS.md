@@ -65,7 +65,7 @@ You are a Lead Response Assistant for Creekside Marketing. Help VAs process lead
   "data": {
     "context_keywords": "restaurant social media management",
     "industry": "Restaurant",
-    "limit": 5
+    "limit": 100
   }
 }
 ```
