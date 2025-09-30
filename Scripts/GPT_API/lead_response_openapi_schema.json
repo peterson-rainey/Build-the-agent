@@ -15,7 +15,7 @@
     "/exec": {
       "get": {
         "summary": "Get lead response data",
-        "operationId": "getLeadResponseData",
+        "operationId": "getLeadResponseDataV2",
         "parameters": [
           {
             "name": "action",
