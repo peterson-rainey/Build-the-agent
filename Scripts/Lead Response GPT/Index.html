@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Response GPT</title>
+    <style>
+        body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial; background: #0b2b4a; color: #e9eff7; padding: 32px 16px; }
+        .shell { max-width: 980px; margin: 0 auto; }
+        .card { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); border-radius: 16px; padding: 22px; }
+        label { display:block; font-size: 13px; color: #b7c6d9; margin-bottom: 8px; }
+        .control { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: #e9eff7; outline: none; }
+        textarea.control { min-height: 160px; resize: vertical; }
+        .row { display: grid; gap: 14px; grid-template-columns: 1fr; }
+        .cta { margin-top: 12px; display: inline-flex; justify-content: center; gap: 8px; width: 100%; padding: 12px 16px; border: 0; border-radius: 12px; color: #fff; font-weight: 600; background: linear-gradient(135deg, #0ea5e9, #0066cc); cursor: pointer; }
+        .loading { display: none; text-align: center; padding: 14px; color: #b7c6d9; }
+        .results { display: none; margin-top: 16px; padding: 16px; border-radius: 14px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
+        .answer { white-space: pre-wrap; line-height: 1.6; font-size: 15px; }
+        .actions { display:flex; gap:10px; margin-top:8px; }
+        .ghost { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18); }
+        .centered { max-width: 760px; margin: 0 auto; width: 100%; }
+        .rowout { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace; background: rgba(0,0,0,0.3); padding: 10px; border-radius: 10px; overflow-x: auto; }
+        .warning { display:none; margin-top: 10px; color: #ffd27f; }
+        /* Enhancements */
+        .hero { display:grid; gap:6px; place-items:flex-start; margin: 0 0 16px 0; }
+        .brand { display:inline-flex; gap:10px; align-items:center; padding:10px 14px; background: rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:999px; backdrop-filter: blur(6px); }
+        .brand-badge { width: 28px; height: 28px; border-radius: 50%; background: conic-gradient(from 210deg, #0ea5e9, #0066cc); box-shadow: 0 0 0 2px rgba(255,255,255,0.08) inset; }
+        .subtitle { color:#b7c6d9; font-size:13px; }
+        .layout { display:grid; grid-template-columns: 1fr; gap:16px; }
+        @media (min-width: 980px) { .layout { grid-template-columns: 1fr 1fr; } }
+        .topbar { display:flex; gap:10px; align-items:center; justify-content:space-between; margin-bottom:10px; }
+        .muted { color:#b7c6d9; font-size:12px; }
+        .actions { display:flex; gap:10px; }
+        .ghost { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18); }
+        /* Tabs */
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; border-bottom: 2px solid rgba(255,255,255,0.1); }
+        .tab { padding: 12px 20px; background: transparent; border: none; color: #b7c6d9; font-size: 14px; font-weight: 500; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+        .tab:hover { color: #e9eff7; }
+        .tab.active { color: #0ea5e9; border-bottom-color: #0ea5e9; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body>
+    <div class="shell">
+        <div class="hero">
+            <div class="brand"><span class="brand-badge"></span><span>Creekside Lead Response</span></div>
+            <h1 style="margin:0;">Handle leads faster, with consistency</h1>
+            <div class="subtitle">Paste the conversation. Get a compliant, on‑brand response in seconds.</div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="tabs">
+            <button class="tab active" data-tab="lead">Lead Response</button>
+            <button class="tab" data-tab="followup">Follow-up</button>
+            <button class="tab" data-tab="companyrule">Company Rule</button>
+        </div>
+
+        <!-- Lead Response Tab -->
+        <div id="tab-lead" class="tab-content active">
+            <div class="card" style="margin-bottom:16px;">
+                <div class="topbar">
+                    <h3 style="margin:0; color:#b7c6d9;">Input</h3>
+                    <div class="muted" style="font-size:12px;">→ Generates lead response</div>
+                </div>
+                <div class="centered">
+                    <label for="conversation">Paste the full lead conversation *</label>
+                    <textarea id="conversation" class="control" placeholder="Paste the conversation here" required></textarea>
+                    <div class="muted" id="charCount">0 characters</div>
+                    <div class="actions" style="margin-top:8px;">
+                        <button id="pasteBtn" class="cta ghost">Paste</button>
+                        <button id="clearBtn" class="cta ghost">Clear</button>
+                    </div>
+                    <button id="generateBtn" class="cta" style="margin-top:12px;">Generate Response</button>
+                    <div id="loading" class="loading">Analyzing conversation…</div>
+                </div>
+            </div>
+
+            <div class="layout">
+                <div class="card">
+                    <div class="topbar">
+                        <div class="muted">Output</div>
+                        <div class="actions">
+                            <button id="copyResponse" class="cta ghost">Copy Response</button>
+                        </div>
+                    </div>
+                    <div id="results" class="results" style="display:block; background: transparent; border:0; padding:0;">
+                        <div style="margin-bottom:16px;">
+                            <h3 style="margin:0 0 8px 0; color:#b7c6d9; font-size:14px;">Response to Lead (copy this)</h3>
+                            <div id="answer" class="answer" style="min-height:140px; padding:14px; background:rgba(255,255,255,0.05); border-radius:10px; border:1px solid rgba(255,255,255,0.1);">Your response will appear here…</div>
+                        </div>
+                        <div style="margin-top:24px; padding-top:24px; border-top:1px solid rgba(255,255,255,0.1);">
+                            <div class="topbar" style="margin-bottom:8px;">
+                                <h3 style="margin:0; color:#b7c6d9; font-size:14px;">Data Log Row (for logging)</h3>
+                                <button id="copyRow" class="cta ghost" style="padding:6px 12px; font-size:12px;">Copy Row</button>
+                            </div>
+                            <div id="row" class="rowout" style="min-height:40px;"></div>
+                        </div>
+                        <div style="margin-top:16px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.1);">
+                            <h3 style="margin:0 0 8px 0; color:#b7c6d9; font-size:14px;">Details</h3>
+                            <div class="rowout" id="details" style="white-space:pre-wrap; min-height:60px;"></div>
+                        </div>
+                        <div id="contradict" class="warning">Warning: Possible rule contradiction detected. Please review before sending.</div>
+                        <div id="costwarn" class="warning">Notice: Estimated daily API spend exceeded $5. Consider reducing usage.</div>
+
+                        <div style="margin-top:16px; display:grid; gap:10px; grid-template-columns: 1fr 1fr;">
+                            <button id="markGood" class="cta" style="background: linear-gradient(135deg,#22c55e,#16a34a);">Mark Good & Log Row</button>
+                            <button id="toggleBad" class="cta" style="background: linear-gradient(135deg,#ef4444,#b91c1c);">Submit Adjusted Response</button>
+                        </div>
+                        <div id="badPane" style="display:none; margin-top:10px;">
+                            <label for="adjusted">Paste adjusted response to log</label>
+                            <textarea id="adjusted" class="control" placeholder="Paste revised response"></textarea>
+                            <button id="saveAdjusted" class="cta">Save Adjusted Response</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Follow-up Tab -->
+        <div id="tab-followup" class="tab-content">
+            <div class="card" style="margin-bottom:16px;">
+                <div class="topbar">
+                    <h3 style="margin:0; color:#b7c6d9;">Input</h3>
+                    <div class="muted" style="font-size:12px;">→ Generates context-driven follow-up</div>
+                </div>
+                <div class="centered">
+                    <label for="followupConversation">Paste the conversation *</label>
+                    <textarea id="followupConversation" class="control" placeholder="Paste the conversation here" required></textarea>
+                    <div class="muted" id="followupCharCount">0 characters</div>
+                    <div class="actions" style="margin-top:8px;">
+                        <button id="followupPasteBtn" class="cta ghost">Paste</button>
+                        <button id="followupClearBtn" class="cta ghost">Clear</button>
+                    </div>
+                    
+                    <div style="margin-top:20px; padding-top:20px; border-top:1px solid rgba(255,255,255,0.1);">
+                        <label for="callTranscript">Call Transcript (optional)</label>
+                        <div class="muted" style="font-size:11px; margin-bottom:8px;">If there was a sales call, paste the transcript here. This will help craft a post-call follow-up.</div>
+                        <textarea id="callTranscript" class="control" placeholder="Paste call transcript here (if available)" style="min-height:120px;"></textarea>
+                        <div class="muted" id="transcriptCharCount">0 characters</div>
+                        <div class="actions" style="margin-top:8px;">
+                            <button id="transcriptPasteBtn" class="cta ghost" style="font-size:12px; padding:8px 12px;">Paste Transcript</button>
+                            <button id="transcriptClearBtn" class="cta ghost" style="font-size:12px; padding:8px 12px;">Clear</button>
+                        </div>
+                    </div>
+                    
+                    <button id="generateFollowupBtn" class="cta" style="margin-top:12px;">Generate Follow-up</button>
+                    <div id="followupLoading" class="loading">Analyzing conversation and generating follow-up…</div>
+                </div>
+            </div>
+
+            <div class="layout">
+                <div class="card">
+                    <div class="topbar">
+                        <div class="muted">Output</div>
+                        <div class="actions">
+                            <button id="copyFollowupResponse" class="cta ghost">Copy Response</button>
+                        </div>
+                    </div>
+                    <div id="followupResults" class="results" style="display:block; background: transparent; border:0; padding:0;">
+                        <div style="margin-bottom:16px;">
+                            <h3 style="margin:0 0 8px 0; color:#b7c6d9; font-size:14px;">Follow-up Response (copy this)</h3>
+                            <div id="followupAnswer" class="answer" style="min-height:140px; padding:14px; background:rgba(255,255,255,0.05); border-radius:10px; border:1px solid rgba(255,255,255,0.1);">Your follow-up response will appear here…</div>
+                        </div>
+                        <div style="margin-top:24px; padding-top:24px; border-top:1px solid rgba(255,255,255,0.1);">
+                            <div class="topbar" style="margin-bottom:8px;">
+                                <h3 style="margin:0; color:#b7c6d9; font-size:14px;">Data Log Row (for logging)</h3>
+                                <button id="copyFollowupRow" class="cta ghost" style="padding:6px 12px; font-size:12px;">Copy Row</button>
+                            </div>
+                            <div id="followupRow" class="rowout" style="min-height:40px;"></div>
+                        </div>
+                        <div style="margin-top:16px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.1);">
+                            <h3 style="margin:0 0 8px 0; color:#b7c6d9; font-size:14px;">Details</h3>
+                            <div class="rowout" id="followupDetails" style="white-space:pre-wrap; min-height:60px;"></div>
+                        </div>
+                        <div id="followupContradict" class="warning">Warning: Possible rule contradiction detected. Please review before sending.</div>
+                        <div id="followupCostwarn" class="warning">Notice: Estimated daily API spend exceeded $5. Consider reducing usage.</div>
+
+                        <div style="margin-top:16px; display:grid; gap:10px; grid-template-columns: 1fr 1fr;">
+                            <button id="markFollowupGood" class="cta" style="background: linear-gradient(135deg,#22c55e,#16a34a);">Mark Good & Log Row</button>
+                            <button id="toggleFollowupBad" class="cta" style="background: linear-gradient(135deg,#ef4444,#b91c1c);">Submit Adjusted Response</button>
+                        </div>
+                        <div id="followupBadPane" style="display:none; margin-top:10px;">
+                            <label for="followupAdjusted">Paste adjusted response to log</label>
+                            <textarea id="followupAdjusted" class="control" placeholder="Paste revised response"></textarea>
+                            <button id="saveFollowupAdjusted" class="cta">Save Adjusted Response</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Company Rule Tab -->
+        <div id="tab-companyrule" class="tab-content">
+            <div class="card" style="margin-bottom:16px;">
+                <div class="topbar">
+                    <h3 style="margin:0; color:#b7c6d9;">Input</h3>
+                    <div class="muted" style="font-size:12px;">→ Generates company rule or extracts rules from PDF</div>
+                </div>
+                <div class="centered">
+                    <label for="ruleInput">Describe the company rule, paste context, or paste PDF text *</label>
+                    <div class="muted" style="font-size:11px; margin-bottom:8px;">For PDFs: Select "Process PDF Text" below and paste the full text. GPT will extract valuable rules and create multiple rows.</div>
+                    <textarea id="ruleInput" class="control" placeholder="Describe the rule, paste relevant context, or paste PDF text here" required style="min-height:200px;"></textarea>
+                    <div class="muted" id="ruleInputCharCount">0 characters</div>
+                    <div style="margin-top:12px;">
+                        <label for="ruleType" style="display:inline-block; margin-right:12px;">Type:</label>
+                        <select id="ruleType" class="control" style="display:inline-block; width:auto; padding:8px 12px;">
+                            <option value="rule">Generate Company Rule</option>
+                            <option value="pdf">Process PDF Text</option>
+                        </select>
+                    </div>
+                    <div id="pdfNameContainer" style="display:none; margin-top:12px;">
+                        <label for="pdfName">PDF Name (optional)</label>
+                        <div class="muted" style="font-size:11px; margin-bottom:4px;">Leave blank to auto-detect from text</div>
+                        <input id="pdfName" class="control" placeholder="e.g., Strategic Compendium, Case Study 2024"/>
+                    </div>
+                    <div class="actions" style="margin-top:8px;">
+                        <button id="rulePasteBtn" class="cta ghost">Paste</button>
+                        <button id="ruleClearBtn" class="cta ghost">Clear</button>
+                    </div>
+                    <button id="generateRuleBtn" class="cta" style="margin-top:12px; background: linear-gradient(135deg,#f59e0b,#d97706);">Generate Company Rule</button>
+                    <div id="ruleLoading" class="loading">Generating company rule…</div>
+                </div>
+            </div>
+
+            <div class="layout">
+                <div class="card">
+                    <div class="topbar">
+                        <div class="muted">Output</div>
+                    </div>
+                    <div id="ruleResults" class="results" style="display:block; background: transparent; border:0; padding:0;">
+                        <div style="margin-bottom:16px;">
+                            <h3 style="margin:0 0 8px 0; color:#b7c6d9; font-size:14px;">Generated Company Rule (Full Output)</h3>
+                            <div id="ruleAnswer" class="answer" style="min-height:140px; padding:14px; background:rgba(255,255,255,0.05); border-radius:10px; border:1px solid rgba(255,255,255,0.1);">Your company rule will appear here…</div>
+                        </div>
+                        <div style="margin-bottom:16px;">
+                            <h3 style="margin:0 0 8px 0; color:#b7c6d9; font-size:14px;">Extracted Description (What will be saved to rule_description column)</h3>
+                            <div id="ruleDescriptionExtracted" class="answer" style="min-height:80px; padding:14px; background:rgba(34,197,94,0.1); border-radius:10px; border:2px solid rgba(34,197,94,0.3); color:#86efac; font-family:monospace; white-space:pre-wrap; word-wrap:break-word;">Extracted description will appear here…</div>
+                            <div style="margin-top:8px; font-size:12px; color:#94a3b8;">
+                                <strong>Length:</strong> <span id="ruleDescriptionLength">0</span> characters
+                                <span id="ruleDescriptionStatus" style="margin-left:12px;"></span>
+                            </div>
+                        </div>
+                        <div style="margin-top:24px; padding-top:24px; border-top:1px solid rgba(255,255,255,0.1);">
+                            <h3 style="margin:0 0 8px 0; color:#b7c6d9; font-size:14px;">Rule Details (for logging)</h3>
+                            <div id="ruleDetails" class="rowout" style="min-height:40px;"></div>
+                        </div>
+                        <div style="margin-top:16px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.1);">
+                            <h3 style="margin:0 0 8px 0; color:#b7c6d9; font-size:14px;">Details</h3>
+                            <div class="rowout" id="ruleDetailsInfo" style="white-space:pre-wrap; min-height:60px;"></div>
+                        </div>
+
+                        <div style="margin-top:16px;">
+                            <label for="ruleCategory">Category *</label>
+                            <input id="ruleCategory" class="control" placeholder="e.g., Pricing, Communication, Compliance"/>
+                            <label for="ruleTitle" style="margin-top:12px;">Rule Title *</label>
+                            <input id="ruleTitle" class="control" placeholder="e.g., Standard Pricing Structure"/>
+                            <button id="saveRuleBtn" class="cta" style="background: linear-gradient(135deg,#22c55e,#16a34a); margin-top:12px;">Save to Company Rules</button>
+                            <button id="savePDFRulesBtn" class="cta" style="background: linear-gradient(135deg,#22c55e,#16a34a); margin-top:12px; display:none;">Add to Spreadsheet</button>
+                            <div id="ruleResult" style="display:none; margin-top:12px; padding:12px; border-radius:10px; background:rgba(255,255,255,0.05);"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="card" style="margin-top:16px;">
+            <h3 style="margin:0 0 8px 0; color:#b7c6d9;">VA Next Steps</h3>
+            <div style="color:#e9eff7; font-size:14px; line-height:1.6;">
+                - Copy the response and send to your boss for approval<br/>
+                - Copy the row above into the <b>Data Log</b> tab if not auto-logged<br/>
+                - If adjusted, paste the final approved version into the spreadsheet<br/>
+                - Confirm the sheet is updated before your next question
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(function(tab) {
+            tab.addEventListener('click', function() {
+                var tabName = this.getAttribute('data-tab');
+                // Update tab buttons
+                document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+                this.classList.add('active');
+                // Update tab content
+                document.querySelectorAll('.tab-content').forEach(function(c) { c.classList.remove('active'); });
+                document.getElementById('tab-' + tabName).classList.add('active');
+            });
+        });
+
+        // Lead Response Tab Functions
+        document.getElementById('generateBtn').addEventListener('click', function(){
+            const conversation = document.getElementById('conversation').value.trim();
+            if (!conversation) { alert('Please paste the conversation.'); return; }
+            setLoading('lead', true);
+            google.script.run.withSuccessHandler(function(resp) { showResults('lead', resp); }).withFailureHandler(showError)
+                .generateLeadResponse({ conversation: conversation, type: 'lead' });
+        });
+
+        document.getElementById('pasteBtn').addEventListener('click', async function(){
+            try {
+                const text = await navigator.clipboard.readText();
+                const el = document.getElementById('conversation');
+                el.value = text || '';
+                updateCharCount('conversation', 'charCount');
+                el.focus();
+            } catch (e) { alert('Clipboard permission denied'); }
+        });
+        document.getElementById('clearBtn').addEventListener('click', function(){
+            const el = document.getElementById('conversation');
+            el.value = '';
+            updateCharCount('conversation', 'charCount');
+            el.focus();
+        });
+        document.getElementById('conversation').addEventListener('input', function() { updateCharCount('conversation', 'charCount'); });
+
+        // Follow-up Tab Functions
+        document.getElementById('generateFollowupBtn').addEventListener('click', function(){
+            const conversation = document.getElementById('followupConversation').value.trim();
+            if (!conversation) { alert('Please paste the conversation.'); return; }
+            const callTranscript = document.getElementById('callTranscript').value.trim();
+            setLoading('followup', true);
+            google.script.run.withSuccessHandler(function(resp) { showResults('followup', resp); }).withFailureHandler(showError)
+                .generateLeadResponse({ conversation: conversation, callTranscript: callTranscript, type: 'followup' });
+        });
+
+        document.getElementById('followupPasteBtn').addEventListener('click', async function(){
+            try {
+                const text = await navigator.clipboard.readText();
+                const el = document.getElementById('followupConversation');
+                el.value = text || '';
+                updateCharCount('followupConversation', 'followupCharCount');
+                el.focus();
+            } catch (e) { alert('Clipboard permission denied'); }
+        });
+        document.getElementById('followupClearBtn').addEventListener('click', function(){
+            const el = document.getElementById('followupConversation');
+            el.value = '';
+            updateCharCount('followupConversation', 'followupCharCount');
+            el.focus();
+        });
+        document.getElementById('followupConversation').addEventListener('input', function() { updateCharCount('followupConversation', 'followupCharCount'); });
+
+        // Call Transcript handlers
+        document.getElementById('transcriptPasteBtn').addEventListener('click', async function(){
+            try {
+                const text = await navigator.clipboard.readText();
+                const el = document.getElementById('callTranscript');
+                el.value = text || '';
+                updateCharCount('callTranscript', 'transcriptCharCount');
+                el.focus();
+            } catch (e) { alert('Clipboard permission denied'); }
+        });
+        document.getElementById('transcriptClearBtn').addEventListener('click', function(){
+            const el = document.getElementById('callTranscript');
+            el.value = '';
+            updateCharCount('callTranscript', 'transcriptCharCount');
+            el.focus();
+        });
+        document.getElementById('callTranscript').addEventListener('input', function() { updateCharCount('callTranscript', 'transcriptCharCount'); });
+
+        // Company Rule Tab Functions
+        // Show/hide PDF name field based on dropdown
+        document.getElementById('ruleType').addEventListener('change', function(){
+            const type = this.value;
+            const pdfNameContainer = document.getElementById('pdfNameContainer');
+            const generateBtn = document.getElementById('generateRuleBtn');
+            if (type === 'pdf') {
+                pdfNameContainer.style.display = 'block';
+                generateBtn.textContent = 'Process PDF & Extract Rules';
+                generateBtn.style.background = 'linear-gradient(135deg,#8b5cf6,#7c3aed)';
+            } else {
+                pdfNameContainer.style.display = 'none';
+                generateBtn.textContent = 'Generate Company Rule';
+                generateBtn.style.background = 'linear-gradient(135deg,#f59e0b,#d97706)';
+            }
+        });
+
+        document.getElementById('generateRuleBtn').addEventListener('click', function(){
+            const ruleInput = document.getElementById('ruleInput').value.trim();
+            const ruleType = document.getElementById('ruleType').value;
+            
+            if (!ruleInput) { 
+                alert('Please describe the rule, paste context, or paste PDF text.'); 
+                return; 
+            }
+            
+            if (ruleType === 'pdf') {
+                const pdfName = document.getElementById('pdfName').value.trim(); // Optional
+                setLoading('rule', true);
+                document.getElementById('ruleLoading').textContent = 'Processing PDF and extracting rules…';
+                google.script.run.withSuccessHandler(function(resp) {
+                    setLoading('rule', false);
+                    if (!resp || !resp.success) {
+                        showError(resp && resp.error ? resp.error : 'Unknown error');
+                        return;
+                    }
+                    
+                    // Display extracted rules in the output section
+                    if (resp.rules && resp.rules.length > 0) {
+                        var rulesText = 'Extracted Rules from "' + resp.pdfName + '":\n\n';
+                        resp.rules.forEach(function(rule, idx) {
+                            rulesText += (idx + 1) + '. [' + rule.category + '] ' + rule.title + '\n';
+                            rulesText += '   ' + rule.description + '\n\n';
+                        });
+                        document.getElementById('ruleAnswer').textContent = rulesText;
+                        document.getElementById('ruleResults').style.display = 'block';
+                        // Update the heading
+                        document.querySelector('#ruleResults h3').textContent = 'Extracted Company Rules';
+                        
+                        // Store rules data for saving
+                        document.getElementById('ruleAnswer').setAttribute('data-pdf-rules', JSON.stringify(resp.rules));
+                        document.getElementById('ruleAnswer').setAttribute('data-pdf-name', resp.pdfName);
+                        
+                        // Show save button for PDF rules, hide single rule save button
+                        document.getElementById('savePDFRulesBtn').style.display = 'block';
+                        document.getElementById('saveRuleBtn').style.display = 'none';
+                        var categoryInput = document.getElementById('ruleCategory');
+                        var titleInput = document.getElementById('ruleTitle');
+                        if (categoryInput) categoryInput.style.display = 'none';
+                        if (titleInput) titleInput.style.display = 'none';
+                        var categoryLabel = document.querySelector('label[for="ruleCategory"]');
+                        var titleLabel = document.querySelector('label[for="ruleTitle"]');
+                        if (categoryLabel) categoryLabel.style.display = 'none';
+                        if (titleLabel) titleLabel.style.display = 'none';
+                    }
+                    
+                    // Show success message
+                    const resultDiv = document.getElementById('ruleResult');
+                    resultDiv.style.display = 'block';
+                    resultDiv.style.borderLeft = '4px solid #22c55e';
+                    resultDiv.innerHTML = '<strong>✅ Success!</strong><br/>' +
+                        'PDF "' + resp.pdfName + '" processed successfully.<br/>' +
+                        'Extracted ' + resp.rulesCreated + ' rule(s). Review and click "Add to Spreadsheet" to save them.<br/>' +
+                        'Category format: "PDF - ' + resp.pdfName + '"';
+                    
+                    // Clear inputs
+                    document.getElementById('ruleInput').value = '';
+                    document.getElementById('pdfName').value = '';
+                    updateCharCount('ruleInput', 'ruleInputCharCount');
+                }).withFailureHandler(showError)
+                .processPDFToRules({ pdfName: pdfName || '', text: ruleInput });
+            } else {
+                setLoading('rule', true);
+                document.getElementById('ruleLoading').textContent = 'Generating company rule…';
+                google.script.run.withSuccessHandler(function(resp) { showResults('rule', resp); }).withFailureHandler(showError)
+                    .generateCompanyRule({ input: ruleInput });
+            }
+        });
+
+        document.getElementById('rulePasteBtn').addEventListener('click', async function(){
+            try {
+                const text = await navigator.clipboard.readText();
+                const el = document.getElementById('ruleInput');
+                el.value = text || '';
+                updateCharCount('ruleInput', 'ruleInputCharCount');
+                el.focus();
+            } catch (e) { alert('Clipboard permission denied'); }
+        });
+        document.getElementById('ruleClearBtn').addEventListener('click', function(){
+            const el = document.getElementById('ruleInput');
+            el.value = '';
+            updateCharCount('ruleInput', 'ruleInputCharCount');
+            el.focus();
+        });
+        document.getElementById('ruleInput').addEventListener('input', function() { updateCharCount('ruleInput', 'ruleInputCharCount'); });
+
+        // Save PDF Rules (multiple rules from PDF)
+        document.getElementById('savePDFRulesBtn').addEventListener('click', function(){
+            const ruleAnswerEl = document.getElementById('ruleAnswer');
+            const rulesJson = ruleAnswerEl.getAttribute('data-pdf-rules');
+            const pdfName = ruleAnswerEl.getAttribute('data-pdf-name');
+            
+            if (!rulesJson || !pdfName) {
+                alert('No rules to save. Please process a PDF first.');
+                return;
+            }
+            
+            let rules;
+            try {
+                rules = JSON.parse(rulesJson);
+            } catch (e) {
+                alert('Error parsing rules data. Please try processing the PDF again.');
+                return;
+            }
+            
+            const btn = document.getElementById('savePDFRulesBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+            
+            google.script.run.withSuccessHandler(function(resp) {
+                btn.disabled = false;
+                btn.textContent = 'Add to Spreadsheet';
+                if (resp && resp.success) {
+                    const resultDiv = document.getElementById('ruleResult');
+                    resultDiv.style.display = 'block';
+                    resultDiv.style.borderLeft = '4px solid #22c55e';
+                    resultDiv.innerHTML = '<strong>✅ Success!</strong><br/>' + resp.message;
+                } else {
+                    alert(resp && resp.error ? resp.error : 'Failed to save rules');
+                }
+            }).withFailureHandler(function(err) {
+                btn.disabled = false;
+                btn.textContent = 'Add to Spreadsheet';
+                showError(err);
+            }).savePDFRules({ pdfName: pdfName, rules: rules });
+        });
+
+        // Save Company Rule (single rule)
+        document.getElementById('saveRuleBtn').addEventListener('click', function(){
+            const category = document.getElementById('ruleCategory').value.trim();
+            const ruleTitle = document.getElementById('ruleTitle').value.trim();
+            // Use clean description if available, otherwise fall back to full answer
+            const ruleAnswerEl = document.getElementById('ruleAnswer');
+            const ruleDescription = (ruleAnswerEl.getAttribute('data-clean-description') || ruleAnswerEl.textContent).trim();
+
+            if (!category || !ruleTitle || !ruleDescription) {
+                alert('Please provide category, rule title, and ensure rule is generated');
+                return;
+            }
+
+            const btn = document.getElementById('saveRuleBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+
+            google.script.run.withSuccessHandler(function(resp){
+                btn.disabled = false;
+                btn.textContent = 'Save to Company Rules';
+                const resultDiv = document.getElementById('ruleResult');
+                if (resp && resp.success) {
+                    resultDiv.style.display = 'block';
+                    resultDiv.style.borderLeft = '4px solid #22c55e';
+                    resultDiv.innerHTML = '<strong>Success!</strong><br/>Rule "' + resp.ruleTitle + '" saved to Company_Rules tab';
+                } else {
+                    resultDiv.style.display = 'block';
+                    resultDiv.style.borderLeft = '4px solid #ef4444';
+                    resultDiv.innerHTML = '<strong>Error:</strong> ' + (resp && resp.error ? resp.error : 'Unknown error');
+                }
+            }).withFailureHandler(function(err){
+                btn.disabled = false;
+                btn.textContent = 'Save to Company Rules';
+                alert('Error: ' + err);
+            }).saveCompanyRule({
+                category: category,
+                ruleTitle: ruleTitle,
+                ruleDescription: ruleDescription
+            });
+        });
+
+        // Logging functions
+        document.getElementById('markGood').addEventListener('click', function(){
+            const row = document.getElementById('row').textContent.trim();
+            if (!row) { alert('Nothing to log. Generate first.'); return; }
+            google.script.run.withSuccessHandler(function(r){
+                if (r && r.success) alert('Logged successfully'); else alert(r && r.error ? r.error : 'Failed to log');
+            }).withFailureHandler(showError).saveGeneratedRow(row);
+        });
+
+        document.getElementById('markFollowupGood').addEventListener('click', function(){
+            const row = document.getElementById('followupRow').textContent.trim();
+            if (!row) { alert('Nothing to log. Generate first.'); return; }
+            google.script.run.withSuccessHandler(function(r){
+                if (r && r.success) alert('Logged successfully'); else alert(r && r.error ? r.error : 'Failed to log');
+            }).withFailureHandler(showError).saveGeneratedRow(row);
+        });
+
+        document.getElementById('toggleBad').addEventListener('click', function(){
+            const pane = document.getElementById('badPane');
+            pane.style.display = pane.style.display === 'none' ? 'block' : 'none';
+        });
+
+        document.getElementById('toggleFollowupBad').addEventListener('click', function(){
+            const pane = document.getElementById('followupBadPane');
+            pane.style.display = pane.style.display === 'none' ? 'block' : 'none';
+        });
+
+        document.getElementById('saveAdjusted').addEventListener('click', function(){
+            const baseRow = document.getElementById('row').textContent.trim();
+            const adjusted = document.getElementById('adjusted').value.trim();
+            if (!baseRow || !adjusted) { alert('Missing data.'); return; }
+            google.script.run.withSuccessHandler(function(r){
+                if (r && r.success) alert('Adjusted response logged'); else alert(r && r.error ? r.error : 'Failed to log');
+            }).withFailureHandler(showError).saveAdjustedResponse({ baseRow: baseRow, adjustedResponse: adjusted });
+        });
+
+        document.getElementById('saveFollowupAdjusted').addEventListener('click', function(){
+            const baseRow = document.getElementById('followupRow').textContent.trim();
+            const adjusted = document.getElementById('followupAdjusted').value.trim();
+            if (!baseRow || !adjusted) { alert('Missing data.'); return; }
+            google.script.run.withSuccessHandler(function(r){
+                if (r && r.success) alert('Adjusted response logged'); else alert(r && r.error ? r.error : 'Failed to log');
+            }).withFailureHandler(showError).saveAdjustedResponse({ baseRow: baseRow, adjustedResponse: adjusted });
+        });
+
+        // Helper functions
+        function setLoading(tab, b){
+            var loadingId = tab === 'lead' ? 'loading' : (tab === 'followup' ? 'followupLoading' : 'ruleLoading');
+            var generateId = tab === 'lead' ? 'generateBtn' : (tab === 'followup' ? 'generateFollowupBtn' : 'generateRuleBtn');
+            var resultsId = tab === 'lead' ? 'results' : (tab === 'followup' ? 'followupResults' : 'ruleResults');
+            
+            document.getElementById(loadingId).style.display = b ? 'block' : 'none';
+            document.getElementById(generateId).disabled = b;
+            if (b) document.getElementById(resultsId).style.display = 'none';
+        }
+
+        function showResults(tab, resp){
+            setLoading(tab, false);
+            if (!resp || !resp.success) { showError(resp && resp.error ? resp.error : 'Unknown error'); return; }
+            
+            if (tab === 'lead') {
+                document.getElementById('answer').textContent = resp.answer || '';
+                document.getElementById('row').textContent = resp.row || '';
+                showDetails('details', resp);
+                document.getElementById('results').style.display = 'block';
+                document.getElementById('contradict').style.display = resp.contradictionWarning ? 'block' : 'none';
+                document.getElementById('costwarn').style.display = resp.costWarning ? 'block' : 'none';
+            } else if (tab === 'followup') {
+                document.getElementById('followupAnswer').textContent = resp.answer || '';
+                document.getElementById('followupRow').textContent = resp.row || '';
+                showDetails('followupDetails', resp);
+                document.getElementById('followupResults').style.display = 'block';
+                document.getElementById('followupContradict').style.display = resp.contradictionWarning ? 'block' : 'none';
+                document.getElementById('followupCostwarn').style.display = resp.costWarning ? 'block' : 'none';
+            } else if (tab === 'rule') {
+                // Display the full answer for review, but use clean description for saving
+                document.getElementById('ruleAnswer').textContent = resp.answer || '';
+                document.getElementById('ruleDetails').textContent = resp.ruleDetails || '';
+                showDetails('ruleDetailsInfo', resp);
+                document.getElementById('ruleResults').style.display = 'block';
+                // Auto-populate category and title if provided
+                if (resp.category) document.getElementById('ruleCategory').value = resp.category;
+                if (resp.ruleTitle) document.getElementById('ruleTitle').value = resp.ruleTitle;
+                // Display extracted description in the UI for debugging
+                var extractedDesc = resp.ruleDescription || '';
+                var descElement = document.getElementById('ruleDescriptionExtracted');
+                var lengthElement = document.getElementById('ruleDescriptionLength');
+                var statusElement = document.getElementById('ruleDescriptionStatus');
+                
+                if (extractedDesc) {
+                    descElement.textContent = extractedDesc;
+                    lengthElement.textContent = extractedDesc.length;
+                    // Check if description contains metadata (shouldn't happen)
+                    if (extractedDesc.indexOf('Rule Title:') !== -1 || 
+                        extractedDesc.indexOf('Category:') !== -1 ||
+                        extractedDesc.match(/^\d+\.\s*[Rr]ule\s+[Tt]itle:/i) ||
+                        extractedDesc.match(/^\d+\.\s*[Cc]ategory:/i) ||
+                        extractedDesc.match(/^\d+\.\s*[Rr]ule\s+[Dd]escription:/i)) {
+                        statusElement.innerHTML = '<span style="color:#ef4444;">⚠️ WARNING: Contains metadata labels!</span>';
+                        descElement.style.borderColor = 'rgba(239,68,68,0.5)';
+                        descElement.style.background = 'rgba(239,68,68,0.1)';
+                    } else if (extractedDesc.length < 10) {
+                        statusElement.innerHTML = '<span style="color:#f59e0b;">⚠️ WARNING: Description is too short!</span>';
+                        descElement.style.borderColor = 'rgba(245,158,11,0.5)';
+                        descElement.style.background = 'rgba(245,158,11,0.1)';
+                    } else {
+                        statusElement.innerHTML = '<span style="color:#22c55e;">✅ Clean description</span>';
+                        descElement.style.borderColor = 'rgba(34,197,94,0.3)';
+                        descElement.style.background = 'rgba(34,197,94,0.1)';
+                    }
+                } else {
+                    descElement.textContent = '(Empty - extraction may have failed)';
+                    lengthElement.textContent = '0';
+                    statusElement.innerHTML = '<span style="color:#ef4444;">❌ ERROR: No description extracted!</span>';
+                    descElement.style.borderColor = 'rgba(239,68,68,0.5)';
+                    descElement.style.background = 'rgba(239,68,68,0.1)';
+                }
+                // Store clean description for saving
+                if (resp.ruleDescription) {
+                    document.getElementById('ruleAnswer').setAttribute('data-clean-description', resp.ruleDescription);
+                }
+                // Show single rule save button, hide PDF rules save button
+                document.getElementById('savePDFRulesBtn').style.display = 'none';
+                document.getElementById('saveRuleBtn').style.display = 'block';
+                var categoryInput = document.getElementById('ruleCategory');
+                var titleInput = document.getElementById('ruleTitle');
+                if (categoryInput) categoryInput.style.display = 'block';
+                if (titleInput) titleInput.style.display = 'block';
+                var categoryLabel = document.querySelector('label[for="ruleCategory"]');
+                var titleLabel = document.querySelector('label[for="ruleTitle"]');
+                if (categoryLabel) categoryLabel.style.display = 'block';
+                if (titleLabel) titleLabel.style.display = 'block';
+            }
+        }
+
+        function showDetails(detailsId, resp) {
+            var meta = resp.meta || {};
+            var usage = meta.usage || {};
+            var cost = (meta.estimated_cost_usd != null) ? ('$' + meta.estimated_cost_usd.toFixed ? meta.estimated_cost_usd.toFixed(3) : meta.estimated_cost_usd) : 'N/A';
+            var ex = (meta.refs && meta.refs.examples_rows) ? meta.refs.examples_rows.join(', ') : 'N/A';
+            var ru = (meta.refs && meta.refs.rules_rows) ? meta.refs.rules_rows.join(', ') : 'N/A';
+            var pdfs = (meta.refs && meta.refs.pdf_chunks) ? meta.refs.pdf_chunks.map(function(p){ return p.pdf + ' (' + p.section + ')'; }).join(', ') : 'N/A';
+            var details = '';
+            details += 'Model: ' + (meta.model || 'unknown') + '\n';
+            details += 'Tokens — prompt: ' + (usage.prompt_tokens || 0) + ', completion: ' + (usage.completion_tokens || 0) + ', total: ' + (usage.total_tokens || ((usage.prompt_tokens||0)+(usage.completion_tokens||0))) + '\n';
+            details += 'Estimated cost: ' + cost + '\n';
+            details += 'Examples rows used: ' + ex + '\n';
+            details += 'Rules rows referenced: ' + ru + '\n';
+            details += 'PDF chunks referenced: ' + pdfs + '\n';
+            document.getElementById(detailsId).textContent = details;
+        }
+
+        function updateCharCount(inputId, countId) {
+            const n = (document.getElementById(inputId).value || '').length;
+            document.getElementById(countId).textContent = n + ' characters';
+        }
+
+        // Copy helpers
+        document.getElementById('copyResponse').addEventListener('click', function(){
+            const text = document.getElementById('answer').textContent;
+            navigator.clipboard.writeText(text).then(()=>alert('Response copied'));        
+        });
+        document.getElementById('copyRow').addEventListener('click', function(){
+            const text = document.getElementById('row').textContent;
+            navigator.clipboard.writeText(text).then(()=>alert('Row copied'));
+        });
+        document.getElementById('copyFollowupResponse').addEventListener('click', function(){
+            const text = document.getElementById('followupAnswer').textContent;
+            navigator.clipboard.writeText(text).then(()=>alert('Response copied'));        
+        });
+        document.getElementById('copyFollowupRow').addEventListener('click', function(){
+            const text = document.getElementById('followupRow').textContent;
+            navigator.clipboard.writeText(text).then(()=>alert('Row copied'));
+        });
+
+        function showError(err){
+            setLoading('lead', false);
+            setLoading('followup', false);
+            setLoading('rule', false);
+            alert(err);
+        }
+    </script>
+</body>
+</html>
